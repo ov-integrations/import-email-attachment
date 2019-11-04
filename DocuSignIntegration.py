@@ -62,6 +62,7 @@ class Integration(object):
             data = {'action':'INSERT_UPDATE'}
             files = {'file': (file_name, open(file_name, 'rb'))}
             requests.post(url, files=files, params=data, headers={'Accept':'application/json'}, auth=self.auth_onevizion)
+            self.message('Import \"' + self.import_name + '\" started')
         else: self.message('Import \"' + self.import_name + '\" not found')
 
     def get_import(self):
