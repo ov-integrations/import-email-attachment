@@ -40,27 +40,28 @@ class Integration(object):
                         if part.get('Content-Disposition') is None:
                             continue
 
-                        filename = part.get_filename()
-                        if re.search('.csv', filename) is not None:
-                            att_path = os.path.join(filename)
+                        file_name = part.get_filename()
+                        if re.search('.csv', file_name) is not None:
+                            att_path = os.path.join(file_name)
                             if not os.path.isfile(att_path):
                                 fp = open(att_path, 'wb')
                                 fp.write(part.get_payload(decode=True))
                                 fp.close()
 
-                            self.start_import(filename)
-                            os.remove(filename)
+                            self.start_import(file_name)
+                            os.remove(file_name)
 
         else: self.message('Failed to retreive emails')
 
         self.message('Finished integration')                
 
-    def start_import(self, filename):
+    def start_import(self, file_name):
         import_id = self.get_import()
         if import_id != '':
             url = 'https://' + self.url_onevizion + '/api/v3/imports/' + str(import_id) + '/run'
-            files = {'file': (filename, open(filename, 'rb'))}
-            requests.post(url, files=files, headers=self.headers, auth=self.auth_onevizion)
+            data = {'action':'INSERT_UPDATE'}
+            files = {'file': (file_name, open(file_name, 'rb'))}
+            requests.post(url, files=files, params=data, headers={'Accept':'application/json'}, auth=self.auth_onevizion)
         else: self.message('Import \"' + self.import_name + '\" not found')
 
     def get_import(self):
