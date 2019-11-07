@@ -1,11 +1,12 @@
-import requests
-from requests.auth import HTTPBasicAuth
 import re
+import os
+import csv
 import json
+import email
 import imaplib
 import onevizion
-import email
-import os
+import requests
+from requests.auth import HTTPBasicAuth
 
 class Integration(object):
     def __init__(self, url_onevizion='', login_onevizion='', pass_onevizion='', import_name='', login_mail='', pass_mail=''):
@@ -47,17 +48,69 @@ class Integration(object):
                                 fp = open(att_path, 'wb')
                                 fp.write(part.get_payload(decode=True))
                                 fp.close()
-
-                            self.start_import(file_name)
+                            
+                            self.create_import_file(file_name)
+                            if os.path.isfile('ImportFile.csv'):
+                                self.start_import('ImportFile.csv')
+                                os.remove('ImportFile.csv')
+                            else: self.message('Import not started - import file not created')
                             os.remove(file_name)
 
         else: self.message('Failed to retreive emails')
 
         self.message('Finished integration')                
 
+    def create_import_file(self, file_name):
+        field_names=['Project ID','Envelope ID']
+        with open(file_name, "r") as in_file:
+            reader = csv.DictReader(in_file, delimiter=',')
+            envelope_list = []
+            for row in reader:
+                try:
+                    project_id = row['Subject']
+                except KeyError:
+                    self.message('Column \'Subject\' not found in file ' + file_name)
+                    project_id = None
+                
+                try:
+                    envelope_id = row['Envelope ID']
+                except KeyError:
+                    self.message('Column \'Envelope ID\' not found in file ' + file_name)
+                    envelope_id = None
+                
+                if project_id and envelope_id != None:
+                    if re.search('Please DocuSign:', project_id):
+                        row_split = re.split('/', re.split(':',project_id)[1])
+                        if re.search(' USCC|USCC| USC|USC', row_split[0]):
+                            row_split = re.split(' USCC|USCC| USC|USC', row_split[0], 2)
+                            row_sub = re.sub(r'^\s+|\n|[\[\]]|\r|\s+$', '', row_split[1])
+
+                            inner_dict = dict(zip(field_names, [row_sub,envelope_id]))
+                            envelope_list.append(inner_dict)
+                        else:                        
+                            row_sub = re.sub(r'^\s+|\n|[\[\]]|\r|\s+$', '', row_split[0])
+
+                            inner_dict = dict(zip(field_names, [row_sub,envelope_id]))
+                            envelope_list.append(inner_dict)
+                    else: 
+                        row_split = re.split('/', project_id)
+                        row_sub = re.sub(r'^\s+|\n|\r|\s+$', '', row_split[0])
+                        inner_dict = dict(zip(field_names, [row_sub,envelope_id]))
+                        envelope_list.append(inner_dict)
+                else: 
+                    self.message('Integration failed')
+                    break
+
+        if project_id and envelope_id != None:
+            with open('ImportFile.csv', "w") as out_file:
+                writer = csv.DictWriter(out_file, delimiter=',', fieldnames=field_names)
+                writer.writeheader()
+                for row in envelope_list:
+                    writer.writerow(row)
+
     def start_import(self, file_name):
         import_id = self.get_import()
-        if import_id != '':
+        if import_id != None:
             url = 'https://' + self.url_onevizion + '/api/v3/imports/' + str(import_id) + '/run'
             data = {'action':'INSERT_UPDATE'}
             files = {'file': (file_name, open(file_name, 'rb'))}
@@ -70,7 +123,7 @@ class Integration(object):
         answer = requests.get(url, headers=self.headers, auth=self.auth_onevizion)
         response = answer.json()
 
-        import_id = ''
+        import_id = None
         for imports in response:
             import_name = imports['name']
             if import_name == self.import_name:
