@@ -50,10 +50,7 @@ class Integration(object):
                                 fp.close()
                             
                             self.create_import_file(file_name)
-                            if os.path.isfile('ImportFile.csv'):
-                                self.start_import('ImportFile.csv')
-                                os.remove('ImportFile.csv')
-                            else: self.message('Import not started - import file not created')
+                            self.start_import(file_name)
                             os.remove(file_name)
 
         else: self.message('Failed to retreive emails')
@@ -61,52 +58,47 @@ class Integration(object):
         self.message('Finished integration')                
 
     def create_import_file(self, file_name):
-        field_names=['Project ID','Envelope ID']
-        with open(file_name, "r") as in_file:
-            reader = csv.DictReader(in_file, delimiter=',')
+        with open(file_name, "r") as file:
+            reader = csv.reader(file)
+
             envelope_list = []
             for row in reader:
-                try:
-                    project_id = row['Subject']
-                except KeyError:
-                    self.message('Column \'Subject\' not found in file ' + file_name)
-                    project_id = None
-                
-                try:
-                    envelope_id = row['Envelope ID']
-                except KeyError:
-                    self.message('Column \'Envelope ID\' not found in file ' + file_name)
-                    envelope_id = None
-                
-                if project_id and envelope_id != None:
-                    if re.search('Please DocuSign:', project_id):
-                        row_split = re.split('/', re.split(':',project_id)[1])
-                        if re.search(' USCC|USCC| USC|USC', row_split[0]):
-                            row_split = re.split(' USCC|USCC| USC|USC', row_split[0], 2)
-                            row_sub = re.sub(r'^\s+|\n|[\[\]]|\r|\s+$', '', row_split[1])
+                field_names = row
+                break
 
-                            inner_dict = dict(zip(field_names, [row_sub,envelope_id]))
-                            envelope_list.append(inner_dict)
-                        else:                        
-                            row_sub = re.sub(r'^\s+|\n|[\[\]]|\r|\s+$', '', row_split[0])
+            for row in reader:
+                result = []
+                for i in reversed(range(len(row[1:]))):
+                    result.insert(0, row[i+1])
 
-                            inner_dict = dict(zip(field_names, [row_sub,envelope_id]))
-                            envelope_list.append(inner_dict)
-                    else: 
-                        row_split = re.split('/', project_id)
-                        row_sub = re.sub(r'^\s+|\n|\r|\s+$', '', row_split[0])
-                        inner_dict = dict(zip(field_names, [row_sub,envelope_id]))
+                if re.search('Please DocuSign:', row[0]):
+                    row_split = re.split('/', re.split(':',row[0])[1])
+                    if re.search(' USCC|USCC| USC|USC', row_split[0]):
+                        row_split = re.split(' USCC|USCC| USC|USC', row_split[0], 2)
+                        row_sub = re.sub(r'^\s+|\n|[\[\]]|\r|\s+$', '', row_split[1])
+                        
+                        result.insert(0, row_sub)
+                        inner_dict = dict(zip(field_names, result))
+                        envelope_list.append(inner_dict)
+                    else:                        
+                        row_sub = re.sub(r'^\s+|\n|[\[\]]|\r|\s+$', '', row_split[0])
+
+                        result.insert(0, row_sub)
+                        inner_dict = dict(zip(field_names, result))
                         envelope_list.append(inner_dict)
                 else: 
-                    self.message('Integration failed')
-                    break
+                    row_split = re.split('/', row[0])
+                    row_sub = re.sub(r'^\s+|\n|\r|\s+$', '', row_split[0])
 
-        if project_id and envelope_id != None:
-            with open('ImportFile.csv', "w") as out_file:
-                writer = csv.DictWriter(out_file, delimiter=',', fieldnames=field_names)
-                writer.writeheader()
-                for row in envelope_list:
-                    writer.writerow(row)
+                    result.insert(0, row_sub)
+                    inner_dict = dict(zip(field_names, result))
+                    envelope_list.append(inner_dict)
+
+        with open(file_name, "w") as file:
+            writer = csv.DictWriter(file, delimiter=',', fieldnames=field_names)
+            writer.writeheader()
+            for row in envelope_list:
+                writer.writerow(row)
 
     def start_import(self, file_name):
         import_id = self.get_import()
