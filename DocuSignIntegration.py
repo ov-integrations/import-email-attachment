@@ -4,8 +4,9 @@ import csv
 import json
 import email
 import imaplib
-import onevizion
+import zipfile
 import requests
+import onevizion
 from requests.auth import HTTPBasicAuth
 
 class Integration(object):
@@ -42,15 +43,21 @@ class Integration(object):
                             continue
 
                         file_name = part.get_filename()
-                        if re.search('.csv', file_name) is not None:
+                        if re.search('.zip', file_name) is not None:
                             att_path = os.path.join(file_name)
                             if not os.path.isfile(att_path):
                                 fp = open(att_path, 'wb')
                                 fp.write(part.get_payload(decode=True))
                                 fp.close()
-                            
-                            self.create_import_file(file_name)
-                            self.start_import(file_name)
+
+                            zip_file = zipfile.ZipFile(file_name)
+ 
+                            for extract_file in zip_file.namelist():
+                                if re.search('.csv', extract_file):
+                                    zip_file.extract(extract_file)
+                                    self.create_import_file(extract_file)
+                                    self.start_import(extract_file)
+                                    os.remove(extract_file)
                             os.remove(file_name)
 
         else: self.message('Failed to retreive emails')
