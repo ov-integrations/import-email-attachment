@@ -10,11 +10,12 @@ import onevizion
 from requests.auth import HTTPBasicAuth
 
 class Integration(object):
-    def __init__(self, url_onevizion='', login_onevizion='', pass_onevizion='', import_name='', login_mail='', pass_mail=''):
+    def __init__(self, url_onevizion='', login_onevizion='', pass_onevizion='', import_name='', login_mail='', pass_mail='', subject_mail=''):
         self.url_onevizion = self.url_setting(url_onevizion)
         self.import_name = import_name
         self.login_mail = login_mail
         self.pass_mail = pass_mail
+        self.subject_mail = subject_mail
 
         self.headers = {'Content-type':'application/json','Content-Encoding':'utf-8'}
         self.auth_onevizion = HTTPBasicAuth(login_onevizion, pass_onevizion)
@@ -35,7 +36,7 @@ class Integration(object):
                 ret, data = mail.fetch(message,'(RFC822)')
                 msg = email.message_from_bytes(data[0][1])
                 subject = msg.get('Subject')
-                if re.search('DocuSign', subject) is not None:
+                if re.search(self.subject_mail, subject) is not None:
                     for part in msg.walk():                    
                         if part.get_content_maintype() == 'multipart':
                             continue
@@ -43,69 +44,29 @@ class Integration(object):
                             continue
 
                         file_name = part.get_filename()
-                        if re.search('.zip', file_name) is not None:
+                        if re.search('.zip|.csv', file_name) is not None:
                             att_path = os.path.join(file_name)
                             if not os.path.isfile(att_path):
                                 fp = open(att_path, 'wb')
                                 fp.write(part.get_payload(decode=True))
                                 fp.close()
 
-                            zip_file = zipfile.ZipFile(file_name)
- 
-                            for extract_file in zip_file.namelist():
-                                if re.search('.csv', extract_file):
-                                    zip_file.extract(extract_file)
-                                    self.create_import_file(extract_file)
-                                    self.start_import(extract_file)
-                                    os.remove(extract_file)
+                            if re.search('.zip', file_name):
+                                zip_file = zipfile.ZipFile(file_name)
+    
+                                for extract_file in zip_file.namelist():
+                                    if re.search('.csv', extract_file):
+                                        zip_file.extract(extract_file)
+                                        self.start_import(extract_file)
+                                        os.remove(extract_file)
+
+                            elif re.search('.csv', file_name):
+                                self.start_import(file_name)
                             os.remove(file_name)
 
-        else: self.message('Failed to retreive emails')
+        else: self.message('Failed to retrieve emails')
 
         self.message('Finished integration')                
-
-    def create_import_file(self, file_name):
-        with open(file_name, "r") as file:
-            reader = csv.reader(file)
-
-            envelope_list = []
-            for row in reader:
-                field_names = row
-                break
-
-            for row in reader:
-                result = []
-                for i in reversed(range(len(row[1:]))):
-                    result.insert(0, row[i+1])
-
-                if re.search('Please DocuSign:', row[0]):
-                    row_split = re.split('/', re.split(':',row[0])[1])
-                    if re.search(' USCC|USCC| USC|USC', row_split[0]):
-                        row_split = re.split(' USCC|USCC| USC|USC', row_split[0], 2)
-                        row_sub = re.sub(r'^\s+|\n|[\[\]]|\r|\s+$', '', row_split[1])
-                        
-                        result.insert(0, row_sub)
-                        inner_dict = dict(zip(field_names, result))
-                        envelope_list.append(inner_dict)
-                    else:                        
-                        row_sub = re.sub(r'^\s+|\n|[\[\]]|\r|\s+$', '', row_split[0])
-
-                        result.insert(0, row_sub)
-                        inner_dict = dict(zip(field_names, result))
-                        envelope_list.append(inner_dict)
-                else: 
-                    row_split = re.split('/', row[0])
-                    row_sub = re.sub(r'^\s+|\n|\r|\s+$', '', row_split[0])
-
-                    result.insert(0, row_sub)
-                    inner_dict = dict(zip(field_names, result))
-                    envelope_list.append(inner_dict)
-
-        with open(file_name, "w") as file:
-            writer = csv.DictWriter(file, delimiter=',', fieldnames=field_names)
-            writer.writeheader()
-            for row in envelope_list:
-                writer.writerow(row)
 
     def start_import(self, file_name):
         import_id = self.get_import()

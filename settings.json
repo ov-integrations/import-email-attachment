@@ -1,9 +1,10 @@
 {
-"urlOneVizion" : "url",
-"loginOneVizion" : "login",
-"passOneVizion" : "password",
-"importname" : "import name",
+"url_OneVizion" : "url",
+"login_OneVizion" : "login",
+"pass_OneVizion" : "password",
+"import_name" : "import name",
 
-"loginmail":"login",
-"passmail":"password"
+"login_mail":"login",
+"pass_mail":"password",
+"subject_mail":"subject"
 }
