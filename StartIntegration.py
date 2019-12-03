@@ -1,4 +1,4 @@
-import DocuSignIntegration
+import ImportRenameAttachment
 import json
 
 with open('settings.json', "rb") as PFile:
@@ -13,4 +13,4 @@ login_mail = password_data["login_mail"]
 pass_mail = password_data["pass_mail"]
 subject_mail = password_data["subject_mail"]
 
-DocuSignIntegration.Integration(url_onevizion=url_onevizion, login_onevizion=login_onevizion, pass_onevizion=pass_onevizion, import_name=import_name, login_mail=login_mail, pass_mail=pass_mail, subject_mail=subject_mail)
+ImportRenameAttachment.Integration(url_onevizion=url_onevizion, login_onevizion=login_onevizion, pass_onevizion=pass_onevizion, import_name=import_name, login_mail=login_mail, pass_mail=pass_mail, subject_mail=subject_mail)
