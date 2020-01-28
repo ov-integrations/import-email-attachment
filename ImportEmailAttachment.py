@@ -76,19 +76,24 @@ class Integration(object):
             files = {'file': (file_name, open(file_name, 'rb'))}
             requests.post(url, files=files, params=data, headers={'Accept':'application/json'}, auth=self.auth_onevizion)
             self.message('Import \"' + self.import_name + '\" started')
-        else: self.message('Import \"' + self.import_name + '\" not found')
 
     def get_import(self):
         url = 'https://' + self.url_onevizion + '/api/v3/imports'
         answer = requests.get(url, headers=self.headers, auth=self.auth_onevizion)
-        response = answer.json()
-
         import_id = None
-        for imports in response:
-            import_name = imports['name']
-            if import_name == self.import_name:
-                import_id = imports['id']
-                return import_id
+        if answer.status_code != 200:
+            self.message('Problem with getting import - ' + answer.text)
+        else:
+            response = answer.json()
+
+            for imports in response:
+                import_name = imports['name']
+                if import_name == self.import_name:
+                    import_id = imports['id']
+                    break
+            
+            if import_id == None:
+                self.message('Import \"' + self.import_name + '\" not found')
 
         return import_id
 
