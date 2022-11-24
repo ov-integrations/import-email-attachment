@@ -1,0 +1,44 @@
+{
+    "type": "object",
+    "properties": {
+        "ovUrl": {
+            "type": "string",
+            "pattern": "^https://.*|^http://.*"
+        },
+        "ovAccessKey": {
+            "type": "string"
+        },
+        "ovSecretKey": {
+            "type": "string"
+        },
+        "importName": {
+            "type": "string"
+        },
+        "importAction": {
+            "type": "string"
+        },
+        "mail": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "username": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "subject": {
+                    "type": "string"
+                }
+            },
+            "required": ["host", "port", "username", "password", "subject"]
+        }
+    },
+    "required": ["ovUrl", "ovAccessKey", "ovSecretKey", "importName", "importAction","mail"]
+}
