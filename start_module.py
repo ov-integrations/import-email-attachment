@@ -21,9 +21,9 @@ with open('settings_schema.json', 'rb') as settings_schema_file:
     settings_schema = json.loads(settings_schema_file.read().decode('utf-8'))
 
 try:
-    validate(instance = settings_data, schema = settings_schema)
-except Exception as exceptiion:
-    raise Exception(f'Incorrect value in the settings file\n{str(exceptiion)}') from exceptiion
+    validate(instance=settings_data, schema=settings_schema)
+except Exception as exception:
+    raise Exception(f'Incorrect value in the settings file\n{str(exception)}') from exception
 
 ov_url = re.sub('^http://|^https://', '', settings_data['ovUrl'][:-1])
 ov_access_key = settings_data['ovAccessKey']

@@ -13,7 +13,7 @@ class Module:
 
     def __init__(self, ov_module_log: IntegrationLog, ov_url: str, settings_data: dict) -> None:
         self._module_log = ov_module_log
-        self._mail = Mail(settings_data['mail'])
+        self._mail_settings = settings_data['mail']
         self._import = Import(ov_url, settings_data)
 
     def start(self) -> None:
@@ -27,32 +27,19 @@ class Module:
 
         self._module_log.add(LogLevel.INFO, f'Import \"{self._import.import_name}\" founded')
 
-        with self._mail.connect() as mail:
-            self._mail.login(mail, self._mail.username, self._mail.password)
-            self._mail.select_mailbox(mail, self._mail.INBOX_FOLDER)
-            list_of_unread_messages = self._get_unread_messages(mail)
-            list_of_files_to_import = self._get_files_from_message_to_import(list_of_unread_messages)
-            self._import_and_remove_file(import_id, list_of_files_to_import)
+        with MailService.connect(self._mail_settings['host'], self._mail_settings['port']) as imap_client:
+            mail_service = MailService(imap_client)
+            mail_service.login(self._mail_settings['username'], self._mail_settings['password'])
+            mail_service.select_mailbox()
+            unread_messages = mail_service.get_unread_messages_with_subject(self._mail_settings['subject'])
+            files_to_import = self._get_files_from_message_to_import(unread_messages)
+            self._import_and_remove_file(import_id, files_to_import)
 
         self._module_log.add(LogLevel.INFO, 'Module has been completed')
 
-    def _get_unread_messages(self, mail: IMAP4_SSL) -> list:
-        list_of_unread_messages = []
-        unread_mails = self._mail.get_unread_mails(mail)[1]
-        for unread_mail in unread_mails[0].split():
-            message_data = self._mail.get_message(mail, unread_mail)[1]
-            message = email.message_from_bytes(message_data[0][1])
-            subject = message.get(self._mail.SUBJECT_PART)
-            if re.search(self._mail.subject, subject) is None:
-                continue
-
-            list_of_unread_messages.append(message)
-
-        return list_of_unread_messages
-
-    def _get_files_from_message_to_import(self, list_of_messages: list) -> list:
-        list_of_files_to_import = []
-        for message in list_of_messages:
+    def _get_files_from_message_to_import(self, messages: list) -> list:
+        files_to_import = []
+        for message in messages:
             for message_part in message.walk():
                 file_name = message_part.get_filename()
 
@@ -63,11 +50,11 @@ class Module:
 
                 self._safe_file(file_name, message_part)
                 if re.search(Module.ZIP, file_name):
-                    list_of_files_to_import = self._extract_files_from_archive(file_name)
+                    files_to_import = self._extract_files_from_archive(file_name)
                 elif re.search(Module.CSV, file_name):
-                    list_of_files_to_import.append(file_name)
+                    files_to_import.append(file_name)
 
-        return list_of_files_to_import
+        return files_to_import
 
     def _safe_file(self, file_name: str, message_part) -> None:
         path_to_file = os.path.join(file_name)
@@ -76,17 +63,17 @@ class Module:
                 file.write(message_part.get_payload(decode=True))
 
     def _extract_files_from_archive(self, file_name: str) -> list:
-        list_of_extracted_files = []
+        extracted_files = []
         with ZipFile(file_name) as zip_file:
             for extract_file in zip_file.namelist():
                 if re.search(Module.CSV, extract_file):
                     zip_file.extract(extract_file)
-                    list_of_extracted_files.append(extract_file)
+                    extracted_files.append(extract_file)
 
-        return list_of_extracted_files
+        return extracted_files
 
-    def _import_and_remove_file(self, import_id: int, list_of_files: list) -> None:
-        for file_name in list_of_files:
+    def _import_and_remove_file(self, import_id: int, files: list) -> None:
+        for file_name in files:
             try:
                 self._import.start_import(import_id, file_name)
                 self._module_log.add(LogLevel.INFO, f'Import \"{self._import.import_name}\" has been running for file "{file_name}"')
@@ -132,48 +119,59 @@ class Import:
             raise ModuleError('Failed to start import', ov_import.request.text)
 
 
-class Mail:
+class MailService:
     SUBJECT_PART = 'Subject'
     UNREAD_MSG = 'UnSeen'
     INBOX_FOLDER = 'INBOX'
     MESSAGE_FORMAT = '(RFC822)'
 
-    def __init__(self, mail_data: dict) -> None:
-        self._host = mail_data['host']
-        self._port = mail_data['port']
-        self.username = mail_data['username']
-        self.password = mail_data['password']
-        self.subject = mail_data['subject']
+    def __init__(self, imap_client: IMAP4_SSL) -> None:
+        self._imap_client = imap_client
 
-    def connect(self) -> IMAP4_SSL:
+    @staticmethod
+    def connect(host: str, port: int) -> IMAP4_SSL:
         try:
-            return IMAP4_SSL(self._host, self._port)
+            return IMAP4_SSL(host, port)
         except Exception as exception:
             raise ModuleError('Failed to connect', exception) from exception
 
-    def login(self, mail: IMAP4_SSL, user: str, password: str) -> None:
+    def login(self, user: str, password: str) -> None:
         try:
-            mail.login(user, password)
+            self._imap_client.login(user, password)
         except Exception as exception:
             raise ModuleError('Failed to login', exception) from exception
 
-    def select_mailbox(self, mail: IMAP4_SSL, mailbox: str) -> None:
+    def select_mailbox(self, mailbox: str = INBOX_FOLDER) -> None:
         try:
-            mail.select(mailbox)
+            self._imap_client.select(mailbox)
         except Exception as exception:
             raise ModuleError('Failed to select mailbox', exception) from exception
 
-    def get_unread_mails(self, mail: IMAP4_SSL) -> list:
+    def get_unread_mails(self) -> tuple:
         try:
-            return mail.search(None, Mail.UNREAD_MSG)
+            return self._imap_client.search(None,  MailService.UNREAD_MSG)
         except Exception as exception:
             raise ModuleError('Failed to get unread mails', exception) from exception
 
-    def get_message(self, mail: IMAP4_SSL, mail_data: str) -> list:
+    def _get_message(self, mail_data: str) -> tuple:
         try:
-            return mail.fetch(mail_data, Mail.MESSAGE_FORMAT)
+            return self._imap_client.fetch(mail_data, MailService.MESSAGE_FORMAT)
         except Exception as exception:
             raise ModuleError('Failed to get message', exception) from exception
+
+    def get_unread_messages_with_subject(self, subject: str) -> list:
+        unread_messages = []
+        unread_mails = self.get_unread_mails()[1]
+        for unread_mail in unread_mails[0].split():
+            message_data = self._get_message(unread_mail)[1]
+            message = email.message_from_bytes(message_data[0][1])
+            unread_mail_subject = message.get(MailService.SUBJECT_PART)
+            if re.search(subject, unread_mail_subject) is None:
+                continue
+
+            unread_messages.append(message)
+
+        return unread_messages
 
 
 class ModuleError(Exception):
