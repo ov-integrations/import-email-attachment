@@ -25,13 +25,10 @@ try:
 except Exception as exception:
     raise Exception(f'Incorrect value in the settings file\n{str(exception)}') from exception
 
-ov_url = re.sub('^http://|^https://', '', settings_data['ovUrl'][:-1])
-ov_access_key = settings_data['ovAccessKey']
-ov_secret_key = settings_data['ovSecretKey']
-
-import_name = settings_data['importName']
-
-mail_data = settings_data['mail']
+onevizion_data = settings_data['onevizion']
+ov_url = re.sub('^http://|^https://', '', onevizion_data['ovUrl'][:-1])
+ov_access_key = onevizion_data['ovAccessKey']
+ov_secret_key = onevizion_data['ovSecretKey']
 
 with open('ihub_parameters.json', 'rb') as ihub_parameters_file:
     module_data = json.loads(ihub_parameters_file.read().decode('utf-8'))
@@ -40,7 +37,7 @@ process_id = module_data['processId']
 log_level = module_data['logLevel']
 
 module_log = IntegrationLog(process_id, ov_url, ov_access_key, ov_secret_key, None, True, log_level)
-module = Module(module_log, ov_url, settings_data)
+module = Module(module_log, settings_data)
 
 try:
     module.start()

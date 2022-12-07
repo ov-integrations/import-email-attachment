@@ -1,12 +1,12 @@
 {
-    "ovUrl": "https://***.onevizion.com/",
-    "ovAccessKey": "******",
-    "ovSecretKey": "************",
-
-    "importName": "import name",
-    "importAction": "INSERT_UPDATE",
-
-    "mail": {
+    "onevizion": {
+        "ovUrl": "https://***.onevizion.com/",
+        "ovAccessKey": "******",
+        "ovSecretKey": "************",
+        "ovImportName": "import name",
+        "ovImportAction": "INSERT_UPDATE"
+    },
+    "email": {
         "host": "imap.gmail.com",
         "port": 993,
         "username": "******",
