@@ -20,7 +20,7 @@ class Module:
     def start(self) -> None:
         self._module_log.add(LogLevel.INFO, 'Starting Module')
 
-        import_id = self._import.get_import_id(self._import.get_import())
+        import_id = self._import.get_import_id()
         if import_id is None:
             self._module_log.add(LogLevel.WARNING, f'Import \"{self._import_name}\" not found')
             raise ModuleError(f'Import \"{self._import_name}\" not found',
@@ -90,7 +90,16 @@ class Import:
         self._ov_import_name = onevizion_data['ovImportName']
         self._ov_import_action = onevizion_data['ovImportAction']
 
-    def get_import(self) -> list:
+    def get_import_id(self) -> int:
+        import_id = None
+        for imp_data in self._get_import():
+            if imp_data['name'] == self._ov_import_name:
+                import_id = imp_data['id']
+                break
+
+        return import_id
+
+    def _get_import(self) -> list:
         url = f'{self._ov_url}/api/v3/imports'
         headers = {'Content-type': 'application/json', 'Content-Encoding': 'utf-8', 'Authorization': f'Bearer {self._ov_access_key}:{self._ov_secret_key}'}
         response = requests.get(url=url, headers=headers)
@@ -99,15 +108,6 @@ class Import:
             raise ModuleError('Failed to get import',  response.text)
 
         return response.json()
-
-    def get_import_id(self, import_data: list) -> int:
-        import_id = None
-        for imp_data in import_data:
-            if imp_data['name'] == self._ov_import_name:
-                import_id = imp_data['id']
-                break
-
-        return import_id
 
     def start_import(self, import_id: int, file_name: str) -> None:
         ov_import = OVImport(self._ov_url, self._ov_access_key, self._ov_secret_key, import_id, file_name, self._ov_import_action, isTokenAuth=True)
