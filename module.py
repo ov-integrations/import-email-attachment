@@ -106,6 +106,7 @@ class Import:
 
         return ov_import.processId
 
+
 class MailService:
     SUBJECT_PART = 'Subject'
     UNREAD_MSG = 'UnSeen'
