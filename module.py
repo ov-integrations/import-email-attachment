@@ -11,10 +11,10 @@ class Module:
     CSV = '.csv'
     ZIP = '.zip'
 
-    def __init__(self, ov_module_log: IntegrationLog, settings_data: dict) -> None:
+    def __init__(self, process_id: int, module_name: str, ov_module_log: IntegrationLog, settings_data: dict) -> None:
         self._module_log = ov_module_log
         self._email_settings = settings_data['email']
-        self._import = Import(settings_data['onevizion'])
+        self._import = Import(settings_data['onevizion'], str(process_id), module_name)
         self._mail_service = MailService(settings_data['email'])
         self._import_name = settings_data['onevizion']['ovImportName']
         self._import_action = settings_data['onevizion']['ovImportAction']
@@ -36,27 +36,33 @@ class Module:
         attachments = self._mail_service.get_attachments(unread_messages)
         archive_files = list(filter(re.compile(Module.ZIP).search, attachments))
         try:
-            attachments = self._extract_files_from_archive(archive_files, attachments)
-        finally:
-            self._remove_files(archive_files)
+            extracted_files = self._extract_files_from_archive(archive_files)
+            attachments.extend(extracted_files)
+            attachments = self._remome_archive_files_from_list(archive_files, attachments)
 
-        try:
             self._import_files(import_id, attachments)
         finally:
+            self._remove_files(archive_files)
             self._remove_files(attachments)
 
         self._module_log.add(LogLevel.INFO, 'Module has been completed')
 
-    def _extract_files_from_archive(self, archive_files: list, attachments: list) -> list:
+    def _remome_archive_files_from_list(self, archive_files: list, attachments: list) -> list:
         for file_name in archive_files:
             attachments.remove(file_name)
+
+        return attachments
+
+    def _extract_files_from_archive(self, archive_files: list) -> list:
+        extracted_files = []
+        for file_name in archive_files:
             with ZipFile(file_name) as zip_file:
                 for extract_file in zip_file.namelist():
                     if re.search(Module.CSV, extract_file):
                         zip_file.extract(extract_file)
-                        attachments.append(extract_file)
+                        extracted_files.append(extract_file)
 
-        return attachments
+        return extracted_files
 
     def _import_files(self, import_id: int, files: list) -> None:
         for file_name in files:
@@ -73,23 +79,25 @@ class Module:
 
 
 class Import:
-    RUN_COMMENT = 'Imported started by module [import-email-attachment]'
+    RUN_COMMENT = 'Imported started by module [module_name]. Module Run Process ID: [process_id]'
 
-    def __init__(self, onevizion_data: dict) -> None:
+    def __init__(self, onevizion_data: dict, process_id: str, module_name: str) -> None:
         self._ov_url = onevizion_data['ovUrl']
         self._ov_access_key = onevizion_data['ovAccessKey']
         self._ov_secret_key = onevizion_data['ovSecretKey']
+        self._run_comment = Import.RUN_COMMENT.replace('module_name', module_name) \
+                                              .replace('process_id', process_id)
 
     def get_import_id(self, import_name: str) -> int:
         import_id = None
-        for imp_data in self._get_import():
+        for imp_data in self._get_all_imports():
             if imp_data['name'] == import_name:
                 import_id = imp_data['id']
                 break
 
         return import_id
 
-    def _get_import(self) -> list:
+    def _get_all_imports(self) -> list:
         url = f'{self._ov_url}/api/v3/imports'
         headers = {'Content-type': 'application/json', 'Content-Encoding': 'utf-8', 'Authorization': f'Bearer {self._ov_access_key}:{self._ov_secret_key}'}
         response = requests.get(url=url, headers=headers)
@@ -100,7 +108,7 @@ class Import:
         return response.json()
 
     def start_import(self, import_id: int, import_action: str, file_name: str) -> str:
-        ov_import = OVImport(self._ov_url, self._ov_access_key, self._ov_secret_key, import_id, file_name, import_action, Import.RUN_COMMENT, isTokenAuth=True)
+        ov_import = OVImport(self._ov_url, self._ov_access_key, self._ov_secret_key, import_id, file_name, import_action, self._run_comment, isTokenAuth=True)
         if len(ov_import.errors) != 0:
             raise ModuleError('Failed to start import', ov_import.request.text)
 

@@ -35,9 +35,10 @@ with open('ihub_parameters.json', 'rb') as ihub_parameters_file:
 
 process_id = module_data['processId']
 log_level = module_data['logLevel']
+module_name = module_data['integrationName']
 
 module_log = IntegrationLog(process_id, ov_url, ov_access_key, ov_secret_key, None, True, log_level)
-module = Module(module_log, settings_data)
+module = Module(process_id, module_name, module_log, settings_data)
 
 try:
     module.start()
