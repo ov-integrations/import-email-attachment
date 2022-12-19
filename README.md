@@ -1,6 +1,6 @@
 # import-email-attachment
 
-Module retrieves unreaded mails using IMAP protocol, filters them by subject and search for CSV or ZIP files in them, and uploads them to OneVizion through import.
+Module retrieves unreaded mails using IMAP protocol, filters them by subject and search for CSV or ZIP files in them, and uploads them to OneVizion through import (Module does not track the status of imports).
 
 * onevizion* - dictionary with parameters for onevizion
   * ovImportName* - name of the import from the ADMIN_CONFIG_IMPORT page	
