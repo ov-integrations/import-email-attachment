@@ -15,7 +15,6 @@ class Module:
         self._module_log = ov_module_log
         self._email_settings = settings_data['email']
         self._import = Import(settings_data['onevizion'], str(process_id), module_name)
-        self._mail_service = MailService(settings_data['email'])
         self._import_name = settings_data['onevizion']['ovImportName']
         self._import_action = settings_data['onevizion']['ovImportAction']
 
@@ -30,15 +29,17 @@ class Module:
 
         self._module_log.add(LogLevel.INFO, f'Import \"{self._import_name}\" founded')
 
-        with self._mail_service.connect() as mail_service:
-            unread_messages = self._mail_service.get_unread_messages_by_subject(mail_service)
+        with MailService.connect(self._email_settings['host'], self._email_settings['port'],
+                                 self._email_settings['username'], self._email_settings['password']) as imap_client:
+            mail_service = MailService(imap_client)
+            unread_messages = mail_service.get_unread_messages_by_subject(self._email_settings['subject'])
 
-        attachments = self._mail_service.get_attachments(unread_messages)
+        attachments = mail_service.get_attachments(unread_messages)
         archive_files = list(filter(re.compile(Module.ZIP).search, attachments))
         try:
-            extracted_files = self._extract_files_from_archive(archive_files)
+            extracted_files = Module._extract_files_from_archive(archive_files)
             attachments.extend(extracted_files)
-            attachments = self._remome_archive_files_from_list(archive_files, attachments)
+            attachments = Module._remome_archive_files_from_list(archive_files, attachments)
 
             self._import_files(import_id, attachments)
         finally:
@@ -47,13 +48,15 @@ class Module:
 
         self._module_log.add(LogLevel.INFO, 'Module has been completed')
 
-    def _remome_archive_files_from_list(self, archive_files: list, attachments: list) -> list:
+    @staticmethod
+    def _remome_archive_files_from_list(archive_files: list, attachments: list) -> list:
         for file_name in archive_files:
             attachments.remove(file_name)
 
         return attachments
 
-    def _extract_files_from_archive(self, archive_files: list) -> list:
+    @staticmethod
+    def _extract_files_from_archive(archive_files: list) -> list:
         extracted_files = []
         for file_name in archive_files:
             with ZipFile(file_name) as zip_file:
@@ -121,53 +124,51 @@ class MailService:
     INBOX_FOLDER = 'INBOX'
     MESSAGE_FORMAT = '(RFC822)'
 
-    def __init__(self, mail_data: dict) -> None:
-        self._host = mail_data['host']
-        self._port = mail_data['port']
-        self._user = mail_data['username']
-        self._password = mail_data['password']
-        self._subject = mail_data['subject']
+    def __init__(self, imap_client: IMAP4_SSL) -> None:
+        self._imap_client = imap_client
 
-    def connect(self) -> IMAP4_SSL:
+    @staticmethod
+    def connect(host: str, port: str, user: str, password: str) -> IMAP4_SSL:
         try:
-            imap_client = IMAP4_SSL(self._host, self._port)
-            imap_client.login(self._user, self._password)
+            imap_client = IMAP4_SSL(host, port)
+            imap_client.login(user, password)
             return imap_client
         except Exception as exception:
             raise ModuleError('Failed to connect', exception) from exception
 
-    def get_unread_messages_by_subject(self, mail_service: IMAP4_SSL) -> list:
+    def get_unread_messages_by_subject(self, subject: str) -> list:
         unread_messages = []
-        unread_mails = self._get_unread_messages(mail_service)[1]
+        unread_mails = self._get_unread_messages()[1]
         for unread_mail in unread_mails[0].split():
-            message_data = self._get_message(mail_service, unread_mail)[1]
+            message_data = self._get_message(unread_mail)[1]
             message = email.message_from_bytes(message_data[0][1])
             unread_mail_subject = message.get(MailService.SUBJECT_PART)
-            if re.search(self._subject, unread_mail_subject) is not None:
+            if re.search(subject, unread_mail_subject) is not None:
                 unread_messages.append(message)
 
         return unread_messages
 
-    def _get_unread_messages(self, mail_service: IMAP4_SSL, mailbox: str = INBOX_FOLDER) -> tuple:
+    def _get_unread_messages(self, mailbox: str = INBOX_FOLDER) -> tuple:
         try:
-            self._select_mailbox(mail_service, mailbox)
-            return mail_service.search(None,  MailService.UNREAD_MSG)
+            self._select_mailbox(mailbox)
+            return self._imap_client.search(None, MailService.UNREAD_MSG)
         except Exception as exception:
-            raise ModuleError('Failed to get unread mails', exception) from exception
+            raise ModuleError('Failed to get unread messages', exception) from exception
 
-    def _select_mailbox(self, mail_service: IMAP4_SSL, mailbox: str) -> None:
+    def _select_mailbox(self, mailbox: str) -> None:
         try:
-            mail_service.select(mailbox)
+            self._imap_client.select(mailbox)
         except Exception as exception:
             raise ModuleError('Failed to select mailbox', exception) from exception
 
-    def _get_message(self, mail_service: IMAP4_SSL, mail_data: str) -> tuple:
+    def _get_message(self, mail_data: str) -> tuple:
         try:
-            return mail_service.fetch(mail_data, MailService.MESSAGE_FORMAT)
+            return self._imap_client.fetch(mail_data, MailService.MESSAGE_FORMAT)
         except Exception as exception:
             raise ModuleError('Failed to get message', exception) from exception
 
-    def get_attachments(self, messages: list) -> list:
+    @staticmethod
+    def get_attachments(messages: list) -> list:
         attachments = []
         for message in messages:
             for message_part in message.walk():
@@ -176,12 +177,13 @@ class MailService:
                 if message_part.get_content_maintype() != 'multipart' and \
                    message_part.get('Content-Disposition') is not None and \
                    re.search(f'{Module.ZIP}|{Module.CSV}', file_name) is not None:
-                    self._save_file(file_name, message_part)
+                    MailService._save_file(file_name, message_part)
                     attachments.append(file_name)
 
         return attachments
 
-    def _save_file(self, file_name: str, message_part) -> None:
+    @staticmethod
+    def _save_file(file_name: str, message_part) -> None:
         path_to_file = os.path.join(file_name)
         if not os.path.isfile(path_to_file):
             with open(path_to_file, 'wb') as file:
