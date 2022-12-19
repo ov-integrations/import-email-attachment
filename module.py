@@ -38,8 +38,8 @@ class Module:
         archive_files = list(filter(re.compile(Module.ZIP).search, attachments))
         try:
             extracted_files = Module._extract_files_from_archive(archive_files)
-            attachments.extend(extracted_files)
             attachments = Module._remome_archive_files_from_list(archive_files, attachments)
+            attachments.extend(extracted_files)
 
             self._import_files(import_id, attachments)
         finally:
