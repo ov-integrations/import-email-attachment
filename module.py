@@ -26,11 +26,11 @@ class Module:
 
         import_id = self._import.get_import_id(self._import_name)
         if import_id is None:
-            self._module_log.add(LogLevel.ERROR, f'Import \"{self._import_name}\" not found')
-            raise ModuleError(f'Import \"{self._import_name}\" not found',
+            self._module_log.add(LogLevel.ERROR, f'Import "{self._import_name}" not found')
+            raise ModuleError(f'Import "{self._import_name}" not found',
                               'Before running the Module, make sure that there is an import that will be used to add the data')
 
-        self._module_log.add(LogLevel.INFO, f'Import \"{self._import_name}\" founded')
+        self._module_log.add(LogLevel.INFO, f'Import "{self._import_name}" founded')
 
         unread_messages = self._mail_service.get_unread_messages()
         self._module_log.add(LogLevel.INFO, f'{len(unread_messages)} unread messages found')
@@ -44,18 +44,6 @@ class Module:
                 self.remove_files()
 
         self._module_log.add(LogLevel.INFO, 'Module has been completed')
-
-    def created_files_to_import_folder(self):
-        if not os.path.exists(Module.FILES_TO_IMPORT_FOLDER):
-            os.makedirs(Module.FILES_TO_IMPORT_FOLDER)    
-
-    def _get_csv_files_to_import(self, attachments: list) -> list:
-        csv_files = list(filter(re.compile(Module.CSV_REGEXP).search, attachments))
-        zip_files = list(filter(re.compile(Module.ZIP_REGEXP).search, attachments))
-        extracted_csv_files = self._extract_csv_files_from_archive(zip_files)
-        csv_files.extend(extracted_csv_files)
-        self._module_log.add(LogLevel.INFO, f'{len(csv_files)} CSV files found')
-        return csv_files
 
     def _get_attachments_from_unread_messages(self, unread_message) -> list:
         attachments = []
@@ -85,22 +73,41 @@ class Module:
             with open(path_to_file, 'wb') as file:
                 file.write(message_part.get_payload(decode=True))
 
-    def _extract_csv_files_from_archive(self, zip_files: list) -> list:
+    def _get_csv_files_to_import(self, attachments: list) -> list:
+        csv_files = list(filter(re.compile(Module.CSV_REGEXP).search, attachments))
+        zip_files = list(filter(re.compile(Module.ZIP_REGEXP).search, attachments))
+        extracted_csv_files = self._get_csv_files_from_zip(zip_files)
+        csv_files.extend(extracted_csv_files)
+        self._module_log.add(LogLevel.INFO, f'{len(csv_files)} CSV files found')
+        return csv_files
+
+    def _get_csv_files_from_zip(self, zip_files: list) -> list:
         extracted_csv_files = []
         for file_name in zip_files:
             with ZipFile(file_name) as zip_file:
-                for extract_file in zip_file.namelist():
-                    if re.search(Module.CSV_REGEXP, extract_file):
-                        zip_file.extract(extract_file, Module.FILES_TO_IMPORT_FOLDER)
-                        extracted_csv_files.append(f'{Module.FILES_TO_IMPORT_FOLDER}/{extract_file}')
-                        self._module_log.add(LogLevel.INFO, f'Extracted file "{extract_file}" from ZIP "{file_name}"')
+                extracted_files = self._extract_from_zip_by_file_extension(zip_file, Module.CSV_REGEXP)
+                extracted_csv_files.extend(extracted_files)
 
         return extracted_csv_files
+
+    def _extract_from_zip_by_file_extension(self, zip_file: ZipFile, file_extension: str) -> list:
+        extracted_files = []
+        for extract_file in zip_file.namelist():
+            if re.search(file_extension, extract_file):
+                zip_file.extract(extract_file, Module.FILES_TO_IMPORT_FOLDER)
+                extracted_files.append(f'{Module.FILES_TO_IMPORT_FOLDER}/{extract_file}')
+                self._module_log.add(LogLevel.INFO, f'Extracted file "{extract_file}" from ZIP "{zip_file}"')
+
+        return extracted_files
 
     def _import_files(self, import_id: int, files: list) -> None:
         for file_name in files:
             process_id = self._import.start_import(import_id, self._import_action, file_name)
-            self._module_log.add(LogLevel.INFO, f'Import \"{self._import_name}\" has been running for file "{file_name}". Process ID [{process_id}]')
+            self._module_log.add(LogLevel.INFO, f'Import "{self._import_name}" has been running for file "{file_name}". Process ID [{process_id}]')
+
+    def create_folder_to_save_files(self):
+        if not os.path.exists(Module.FILES_TO_IMPORT_FOLDER):
+            os.makedirs(Module.FILES_TO_IMPORT_FOLDER)
 
     def remove_files(self) -> None:
         for file_name in os.listdir(Module.FILES_TO_IMPORT_FOLDER):
