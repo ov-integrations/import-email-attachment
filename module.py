@@ -8,51 +8,88 @@ from onevizion import LogLevel, IntegrationLog, OVImport
 
 
 class Module:
-    CSV = '.csv'
-    ZIP = '.zip'
+    FILES_TO_IMPORT_FOLDER = 'files_to_import'
+    CSV_REGEXP = '^.*\\.csv$'
+    ZIP_REGEXP = '^.*\\.zip$'
 
     def __init__(self, process_id: int, module_name: str, ov_module_log: IntegrationLog, settings_data: dict) -> None:
+        _ov_settings = settings_data['onevizion']
         self._module_log = ov_module_log
-        self._email_settings = settings_data['email']
-        self._import = Import(settings_data['onevizion'], str(process_id), module_name)
-        self._import_name = settings_data['onevizion']['ovImportName']
-        self._import_action = settings_data['onevizion']['ovImportAction']
+        self._import = Import(_ov_settings['ovUrl'], _ov_settings['ovAccessKey'], _ov_settings['ovSecretKey'],
+                              str(process_id), module_name)
+        self._mail_service = MailService(settings_data['email'])
+        self._import_name = _ov_settings['ovImportName']
+        self._import_action = _ov_settings['ovImportAction']
 
     def start(self) -> None:
         self._module_log.add(LogLevel.INFO, 'Starting Module')
 
         import_id = self._import.get_import_id(self._import_name)
         if import_id is None:
-            self._module_log.add(LogLevel.WARNING, f'Import \"{self._import_name}\" not found')
+            self._module_log.add(LogLevel.ERROR, f'Import \"{self._import_name}\" not found')
             raise ModuleError(f'Import \"{self._import_name}\" not found',
                               'Before running the Module, make sure that there is an import that will be used to add the data')
 
         self._module_log.add(LogLevel.INFO, f'Import \"{self._import_name}\" founded')
 
-        attachments = MailService.get_attachments_from_unread_messages(self._email_settings)
-        csv_files = list(filter(re.compile(Module.CSV).search, attachments))
-        zip_files = list(filter(re.compile(Module.ZIP).search, attachments))
-        extracted_csv_files = Module._extract_csv_files_from_archive(zip_files)
-        csv_files.extend(extracted_csv_files)
-        self._module_log.add(LogLevel.INFO, f'{len(csv_files)} CSV files found')
+        unread_messages = self._mail_service.get_unread_messages()
+        self._module_log.add(LogLevel.INFO, f'{len(unread_messages)} unread messages found')
 
-        try:
-            self._import_files(import_id, csv_files)
-        finally:
-            self._remove_files(zip_files)
-            self._remove_files(csv_files)
+        for unread_message in unread_messages:
+            attachments = self._get_attachments_from_unread_messages(unread_message)
+            csv_files = self._get_csv_files_to_import(attachments)
+            try:
+                self._import_files(import_id, csv_files)
+            finally:
+                self.remove_files()
 
         self._module_log.add(LogLevel.INFO, 'Module has been completed')
 
-    @staticmethod
-    def _extract_csv_files_from_archive(zip_files: list) -> list:
+    def _get_csv_files_to_import(self, attachments: list) -> list:
+        csv_files = list(filter(re.compile(Module.CSV_REGEXP).search, attachments))
+        zip_files = list(filter(re.compile(Module.ZIP_REGEXP).search, attachments))
+        extracted_csv_files = self._extract_csv_files_from_archive(zip_files)
+        csv_files.extend(extracted_csv_files)
+        self._module_log.add(LogLevel.INFO, f'{len(csv_files)} CSV files found')
+        return csv_files
+
+    def _get_attachments_from_unread_messages(self, unread_message) -> list:
+        attachments = []
+        send_from = unread_message.get('From')
+        send_date = unread_message.get('Date')
+        for message_part in unread_message.walk():
+            file_name = message_part.get_filename()
+            if self._file_is_contained_in_message(message_part, file_name):
+                self._save_file(file_name, message_part)
+                self._module_log.add(LogLevel.INFO, f'Received file "{file_name}" from a message sent on "{send_date}" from "{send_from}"')
+                attachments.append(f'{Module.FILES_TO_IMPORT_FOLDER}/{file_name}')
+
+        return attachments
+
+    def _file_is_contained_in_message(self, message_part, file_name: str) -> bool:
+        file_is_contained_in_message = False
+        if message_part.get_content_maintype() != 'multipart' and \
+           message_part.get('Content-Disposition') and \
+           re.search(f'{Module.ZIP_REGEXP}|{Module.CSV_REGEXP}', file_name):
+            file_is_contained_in_message = True
+
+        return file_is_contained_in_message
+
+    def _save_file(self, file_name: str, message_part) -> None:
+        path_to_file = os.path.join(Module.FILES_TO_IMPORT_FOLDER, file_name)
+        if not os.path.isfile(path_to_file):
+            with open(path_to_file, 'wb') as file:
+                file.write(message_part.get_payload(decode=True))
+
+    def _extract_csv_files_from_archive(self, zip_files: list) -> list:
         extracted_csv_files = []
         for file_name in zip_files:
             with ZipFile(file_name) as zip_file:
                 for extract_file in zip_file.namelist():
-                    if re.search(Module.CSV, extract_file):
-                        zip_file.extract(extract_file)
-                        extracted_csv_files.append(extract_file)
+                    if re.search(Module.CSV_REGEXP, extract_file):
+                        zip_file.extract(extract_file, Module.FILES_TO_IMPORT_FOLDER)
+                        extracted_csv_files.append(f'{Module.FILES_TO_IMPORT_FOLDER}/{extract_file}')
+                        self._module_log.add(LogLevel.INFO, f'Extracted file "{extract_file}" from ZIP "{file_name}"')
 
         return extracted_csv_files
 
@@ -61,46 +98,49 @@ class Module:
             process_id = self._import.start_import(import_id, self._import_action, file_name)
             self._module_log.add(LogLevel.INFO, f'Import \"{self._import_name}\" has been running for file "{file_name}". Process ID [{process_id}]')
 
-    def _remove_files(self, files: list) -> None:
-        for file_name in files:
+    def remove_files(self) -> None:
+        for file_name in os.listdir(Module.FILES_TO_IMPORT_FOLDER):
             try:
-                os.remove(file_name)
+                os.remove(f'{Module.FILES_TO_IMPORT_FOLDER}/{file_name}')
                 self._module_log.add(LogLevel.DEBUG, f'File "{file_name}" has been deleted')
             except FileNotFoundError:
                 pass
+            except Exception as exception:
+                self._module_log.add(LogLevel.ERROR, f'File "{file_name}" can\'t been deleted. Error: [{exception}]')
 
 
 class Import:
     RUN_COMMENT = 'Imported started by module [module_name]. Module Run Process ID: [process_id]'
 
-    def __init__(self, onevizion_data: dict, process_id: str, module_name: str) -> None:
-        self._ov_url = onevizion_data['ovUrl']
-        self._ov_access_key = onevizion_data['ovAccessKey']
-        self._ov_secret_key = onevizion_data['ovSecretKey']
+    def __init__(self, ov_url: str, ov_access_key: str, ov_secret_key: str, process_id: str, module_name: str) -> None:
+        self._ov_url = ov_url
+        self._ov_url_without_protocol = re.sub('^http://|^https://', '', ov_url[:-1])
+        self._ov_access_key = ov_access_key
+        self._ov_secret_key = ov_secret_key
         self._run_comment = Import.RUN_COMMENT.replace('module_name', module_name) \
                                               .replace('process_id', process_id)
 
     def get_import_id(self, import_name: str) -> int:
         import_id = None
-        for imp_data in self._get_all_imports():
+        for imp_data in self._get_imports():
             if imp_data['name'] == import_name:
                 import_id = imp_data['id']
                 break
 
         return import_id
 
-    def _get_all_imports(self) -> list:
+    def _get_imports(self) -> list:
         url = f'{self._ov_url}/api/v3/imports'
         headers = {'Content-type': 'application/json', 'Content-Encoding': 'utf-8', 'Authorization': f'Bearer {self._ov_access_key}:{self._ov_secret_key}'}
         response = requests.get(url=url, headers=headers)
 
         if response.ok is False:
-            raise ModuleError('Failed to get import',  response.text)
+            raise ModuleError('Failed to get imports',  response.text)
 
         return response.json()
 
     def start_import(self, import_id: int, import_action: str, file_name: str) -> str:
-        ov_import = OVImport(self._ov_url, self._ov_access_key, self._ov_secret_key, import_id, file_name, import_action, self._run_comment, isTokenAuth=True)
+        ov_import = OVImport(self._ov_url_without_protocol, self._ov_access_key, self._ov_secret_key, import_id, file_name, import_action, self._run_comment, isTokenAuth=True)
         if len(ov_import.errors) != 0:
             raise ModuleError('Failed to start import', ov_import.request.text)
 
@@ -113,83 +153,57 @@ class MailService:
     INBOX_FOLDER = 'INBOX'
     MESSAGE_FORMAT = '(RFC822)'
 
-    @staticmethod
-    def get_attachments_from_unread_messages(email_settings: dict) -> list:
-        attachments = []
-        unread_messages = MailService._get_unread_messages_by_subject(email_settings)
-        for message in unread_messages:
-            for message_part in message.walk():
-                file_name = message_part.get_filename()
+    def __init__(self, mail_data: dict) -> None:
+        self._host = mail_data['host']
+        self._port = mail_data['port']
+        self._user = mail_data['username']
+        self._password = mail_data['password']
+        self._subject = mail_data['subject']
 
-                if message_part.get_content_maintype() != 'multipart' and \
-                   message_part.get('Content-Disposition') is not None and \
-                   re.search(f'{Module.ZIP}|{Module.CSV}', file_name) is not None:
-                    MailService._save_file(file_name, message_part)
-                    attachments.append(file_name)
+    def get_unread_messages(self) -> list:
+        with self._connect() as imap_client:
+            unread_messages = self._filter_unread_messages_by_subject(imap_client)
 
-        return attachments
+        return unread_messages
 
-    @staticmethod
-    def _get_unread_messages_by_subject(email_settings: dict) -> list:
-        imap_client = MailService._connect(email_settings['host'], email_settings['port'],
-                                          email_settings['username'], email_settings['password'])
-        filtered_unread_messages = []
-        unread_messages = MailService._get_unread_messages(imap_client)[1]
-        for unread_message in unread_messages[0].split():
-            message_data = MailService._get_message(imap_client, unread_message)[1]
-            message = email.message_from_bytes(message_data[0][1])
-            unread_mail_subject = message.get(MailService.SUBJECT_PART)
-            if re.search(email_settings['subject'], unread_mail_subject) is not None:
-                filtered_unread_messages.append(message)
-
-        MailService._disconnect(imap_client)
-        return filtered_unread_messages
-
-    @staticmethod
-    def _connect(host: str, port: str, user: str, password: str) -> IMAP4_SSL:
+    def _connect(self) -> IMAP4_SSL:
         try:
-            imap_client = IMAP4_SSL(host, port)
-            imap_client.login(user, password)
+            imap_client = IMAP4_SSL(self._host, self._port)
+            imap_client.login(self._user, self._password)
             return imap_client
         except Exception as exception:
             raise ModuleError('Failed to connect', exception) from exception
 
-    @staticmethod
-    def _get_unread_messages(imap_client: IMAP4_SSL, mailbox: str = INBOX_FOLDER) -> tuple:
+    def _filter_unread_messages_by_subject(self, imap_client: IMAP4_SSL) -> list:
+        filtered_unread_messages = []
+        unread_message_numbers = self._get_unread_messages(imap_client)
+        unread_messages = unread_message_numbers[0].split()
+        for unread_message in unread_messages:
+            message = self._get_filtered_message(imap_client, unread_message)
+            if re.search(self._subject, message.get(MailService.SUBJECT_PART)):
+                filtered_unread_messages.append(message)
+        
+        return filtered_unread_messages
+
+    def _get_filtered_message(self, imap_client: IMAP4_SSL, unread_message) -> str:
+        message_part_with_data, message_part_without_data = self._get_message(imap_client, unread_message)
+        message_part_format, message_part_data = message_part_with_data
+        return email.message_from_bytes(message_part_data)
+
+    def _get_unread_messages(self, imap_client: IMAP4_SSL, mailbox: str = INBOX_FOLDER) -> list:
         try:
-            MailService._select_mailbox(imap_client, mailbox)
-            return imap_client.search(None, MailService.UNREAD_MSG)
+            imap_client.select(mailbox)
+            message_status, unread_message_numbers = imap_client.search(None, MailService.UNREAD_MSG)
+            return unread_message_numbers
         except Exception as exception:
             raise ModuleError('Failed to get unread messages', exception) from exception
 
-    @staticmethod
-    def _select_mailbox(imap_client: IMAP4_SSL, mailbox: str) -> None:
+    def _get_message(self, imap_client: IMAP4_SSL, mail_data: str) -> list:
         try:
-            imap_client.select(mailbox)
-        except Exception as exception:
-            raise ModuleError('Failed to select mailbox', exception) from exception
-
-    @staticmethod
-    def _get_message(imap_client: IMAP4_SSL, mail_data: str) -> tuple:
-        try:
-            return imap_client.fetch(mail_data, MailService.MESSAGE_FORMAT)
+            message_status, message = imap_client.fetch(mail_data, MailService.MESSAGE_FORMAT)
+            return message
         except Exception as exception:
             raise ModuleError('Failed to get message', exception) from exception
-
-    @staticmethod
-    def _disconnect(imap_client: IMAP4_SSL) -> None:
-        try:
-            imap_client.close()
-            imap_client.logout()
-        except Exception as exception:
-            raise ModuleError('Failed to connect', exception) from exception
-
-    @staticmethod
-    def _save_file(file_name: str, message_part) -> None:
-        path_to_file = os.path.join(file_name)
-        if not os.path.isfile(path_to_file):
-            with open(path_to_file, 'wb') as file:
-                file.write(message_part.get_payload(decode=True))
 
 
 class ModuleError(Exception):

@@ -45,3 +45,5 @@ try:
 except ModuleError as module_error:
     module_log.add(LogLevel.ERROR, str(module_error.message), str(module_error.description))
     raise module_error
+finally:
+    module.remove_files()
