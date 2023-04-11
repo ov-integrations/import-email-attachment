@@ -45,6 +45,10 @@ class Module:
 
         self._module_log.add(LogLevel.INFO, 'Module has been completed')
 
+    def created_files_to_import_folder(self):
+        if not os.path.exists(Module.FILES_TO_IMPORT_FOLDER):
+            os.makedirs(Module.FILES_TO_IMPORT_FOLDER)    
+
     def _get_csv_files_to_import(self, attachments: list) -> list:
         csv_files = list(filter(re.compile(Module.CSV_REGEXP).search, attachments))
         zip_files = list(filter(re.compile(Module.ZIP_REGEXP).search, attachments))
