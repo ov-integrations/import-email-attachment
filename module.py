@@ -9,8 +9,8 @@ from onevizion import LogLevel, IntegrationLog, OVImport
 
 class Module:
     FILES_TO_IMPORT_FOLDER = 'files_to_import'
-    CSV_REGEXP = '^.*\\.csv$'
-    ZIP_REGEXP = '^.*\\.zip$'
+    CSV_REGEXP = '(?i)^.*\\.csv$'
+    ZIP_REGEXP = '(?i)^.*\\.zip$'
 
     def __init__(self, process_id: int, module_name: str, ov_module_log: IntegrationLog, settings_data: dict) -> None:
         _ov_settings = settings_data['onevizion']
@@ -26,17 +26,17 @@ class Module:
 
         import_id = self._import.get_import_id(self._import_name)
         if import_id is None:
-            self._module_log.add(LogLevel.ERROR, f'Import "{self._import_name}" not found')
-            raise ModuleError(f'Import "{self._import_name}" not found',
+            self._module_log.add(LogLevel.ERROR, f'Import [{self._import_name}] not found')
+            raise ModuleError(f'Import [{self._import_name}] not found',
                               'Before running the Module, make sure that there is an import that will be used to add the data')
 
-        self._module_log.add(LogLevel.INFO, f'Import "{self._import_name}" founded')
+        self._module_log.add(LogLevel.INFO, f'Import ID [{import_id}] found for import [{self._import_name}]')
 
         unread_messages = self._mail_service.get_unread_messages()
         self._module_log.add(LogLevel.INFO, f'{len(unread_messages)} unread messages found')
 
         for unread_message in unread_messages:
-            attachments = self._get_attachments_from_unread_messages(unread_message)
+            attachments = self._get_attachments_from_message(unread_message)
             csv_files = self._get_csv_files_to_import(attachments)
             try:
                 self._import_files(import_id, csv_files)
@@ -45,33 +45,43 @@ class Module:
 
         self._module_log.add(LogLevel.INFO, 'Module has been completed')
 
-    def _get_attachments_from_unread_messages(self, unread_message) -> list:
+    def _get_attachments_from_message(self, message) -> list:
         attachments = []
-        send_from = unread_message.get('From')
-        send_date = unread_message.get('Date')
-        for message_part in unread_message.walk():
+        send_from = message.get('From')
+        send_date = message.get('Date')
+        for message_part in message.walk():
             file_name = message_part.get_filename()
-            if self._file_is_contained_in_message(message_part, file_name):
-                self._save_file(file_name, message_part)
-                self._module_log.add(LogLevel.INFO, f'Received file "{file_name}" from a message sent on "{send_date}" from "{send_from}"')
-                attachments.append(f'{Module.FILES_TO_IMPORT_FOLDER}/{file_name}')
+            if self._file_is_contained_in_part_of_message(message_part) and \
+               self._is_file_type_supported(file_name):
+                path_to_file = self._save_file(file_name, message_part)
+                self._module_log.add(LogLevel.DEBUG,
+                                        f'Received file [{file_name}] from a message sent on [{send_date}] from [{send_from}]')
+                attachments.append(path_to_file)
 
         return attachments
 
-    def _file_is_contained_in_message(self, message_part, file_name: str) -> bool:
-        file_is_contained_in_message = False
-        if message_part.get_content_maintype() != 'multipart' and \
-           message_part.get('Content-Disposition') and \
-           re.search(f'{Module.ZIP_REGEXP}|{Module.CSV_REGEXP}', file_name):
-            file_is_contained_in_message = True
+    def _file_is_contained_in_part_of_message(self, message_part) -> bool:
+        file_is_contained_in_part_of_message = False
+        if message_part.get('Content-Disposition') and \
+           message_part.get_content_maintype() != 'multipart':
+            file_is_contained_in_part_of_message = True
 
-        return file_is_contained_in_message
+        return file_is_contained_in_part_of_message
 
-    def _save_file(self, file_name: str, message_part) -> None:
+    def _is_file_type_supported(self, file_name: str) -> bool:
+        is_file_type_supported = False
+        if re.search(Module.ZIP_REGEXP, file_name) or re.search(Module.CSV_REGEXP, file_name):
+            is_file_type_supported = True
+
+        return is_file_type_supported
+
+    def _save_file(self, file_name: str, message_part) -> str:
         path_to_file = os.path.join(Module.FILES_TO_IMPORT_FOLDER, file_name)
         if not os.path.isfile(path_to_file):
             with open(path_to_file, 'wb') as file:
                 file.write(message_part.get_payload(decode=True))
+
+        return path_to_file
 
     def _get_csv_files_to_import(self, attachments: list) -> list:
         csv_files = list(filter(re.compile(Module.CSV_REGEXP).search, attachments))
@@ -94,16 +104,16 @@ class Module:
         extracted_files = []
         for extract_file in zip_file.namelist():
             if re.search(file_extension, extract_file):
-                zip_file.extract(extract_file, Module.FILES_TO_IMPORT_FOLDER)
-                extracted_files.append(f'{Module.FILES_TO_IMPORT_FOLDER}/{extract_file}')
-                self._module_log.add(LogLevel.INFO, f'Extracted file "{extract_file}" from ZIP "{zip_file}"')
+                path_to_file = zip_file.extract(extract_file, Module.FILES_TO_IMPORT_FOLDER)
+                extracted_files.append(path_to_file)
+                self._module_log.add(LogLevel.DEBUG, f'Extracted file [{extract_file}] from ZIP [{zip_file}]')
 
         return extracted_files
 
     def _import_files(self, import_id: int, files: list) -> None:
         for file_name in files:
             process_id = self._import.start_import(import_id, self._import_action, file_name)
-            self._module_log.add(LogLevel.INFO, f'Import "{self._import_name}" has been running for file "{file_name}". Process ID [{process_id}]')
+            self._module_log.add(LogLevel.DEBUG, f'Started import for [{file_name}]. Process ID [{process_id}]')
 
     def create_folder_to_save_files(self):
         if not os.path.exists(Module.FILES_TO_IMPORT_FOLDER):
@@ -113,11 +123,11 @@ class Module:
         for file_name in os.listdir(Module.FILES_TO_IMPORT_FOLDER):
             try:
                 os.remove(f'{Module.FILES_TO_IMPORT_FOLDER}/{file_name}')
-                self._module_log.add(LogLevel.DEBUG, f'File "{file_name}" has been deleted')
+                self._module_log.add(LogLevel.DEBUG, f'File [{file_name}] has been deleted')
             except FileNotFoundError:
                 pass
             except Exception as exception:
-                self._module_log.add(LogLevel.ERROR, f'File "{file_name}" can\'t been deleted. Error: [{exception}]')
+                self._module_log.add(LogLevel.ERROR, f'File [{file_name}] can\'t been deleted. Error: [{exception}]')
 
 
 class Import:
@@ -142,7 +152,8 @@ class Import:
 
     def _get_imports(self) -> list:
         url = f'{self._ov_url}/api/v3/imports'
-        headers = {'Content-type': 'application/json', 'Content-Encoding': 'utf-8', 'Authorization': f'Bearer {self._ov_access_key}:{self._ov_secret_key}'}
+        headers = {'Content-type': 'application/json', 'Content-Encoding': 'utf-8',
+                   'Authorization': f'Bearer {self._ov_access_key}:{self._ov_secret_key}'}
         response = requests.get(url=url, headers=headers)
 
         if response.ok is False:
@@ -151,7 +162,8 @@ class Import:
         return response.json()
 
     def start_import(self, import_id: int, import_action: str, file_name: str) -> str:
-        ov_import = OVImport(self._ov_url_without_protocol, self._ov_access_key, self._ov_secret_key, import_id, file_name, import_action, self._run_comment, isTokenAuth=True)
+        ov_import = OVImport(self._ov_url_without_protocol, self._ov_access_key, self._ov_secret_key,
+                             import_id, file_name, import_action, self._run_comment, isTokenAuth=True)
         if len(ov_import.errors) != 0:
             raise ModuleError('Failed to start import', ov_import.request.text)
 
