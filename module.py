@@ -51,29 +51,20 @@ class Module:
         send_date = message.get('Date')
         for message_part in message.walk():
             file_name = message_part.get_filename()
-            if self._file_is_contained_in_part_of_message(message_part) and \
+            if self._is_attachment_message_part(message_part) and \
                self._is_file_type_supported(file_name):
                 path_to_file = self._save_file(file_name, message_part)
                 self._module_log.add(LogLevel.DEBUG,
-                                        f'Received file [{file_name}] from a message sent on [{send_date}] from [{send_from}]')
+                                     f'Received file [{file_name}] from a message sent on [{send_date}] from [{send_from}]')
                 attachments.append(path_to_file)
 
         return attachments
 
-    def _file_is_contained_in_part_of_message(self, message_part) -> bool:
-        file_is_contained_in_part_of_message = False
-        if message_part.get('Content-Disposition') and \
-           message_part.get_content_maintype() != 'multipart':
-            file_is_contained_in_part_of_message = True
-
-        return file_is_contained_in_part_of_message
+    def _is_attachment_message_part(self, message_part) -> bool:
+        return bool(message_part.get_content_disposition() == 'attachment')
 
     def _is_file_type_supported(self, file_name: str) -> bool:
-        is_file_type_supported = False
-        if re.search(Module.ZIP_REGEXP, file_name) or re.search(Module.CSV_REGEXP, file_name):
-            is_file_type_supported = True
-
-        return is_file_type_supported
+        return bool(re.search(Module.ZIP_REGEXP, file_name) or re.search(Module.CSV_REGEXP, file_name))
 
     def _save_file(self, file_name: str, message_part) -> str:
         path_to_file = os.path.join(Module.FILES_TO_IMPORT_FOLDER, file_name)
