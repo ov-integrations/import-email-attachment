@@ -39,7 +39,7 @@ module_name = module_data['integrationName']
 
 module_log = IntegrationLog(process_id, ov_url, ov_access_key, ov_secret_key, None, True, log_level)
 module = Module(process_id, module_name, module_log, settings_data)
-module.create_folder_to_save_files()
+module.create_import_files_folder()
 
 try:
     module.start()
@@ -47,4 +47,4 @@ except ModuleError as module_error:
     module_log.add(LogLevel.ERROR, str(module_error.message), str(module_error.description))
     raise module_error
 finally:
-    module.remove_files()
+    module.remove_import_files()

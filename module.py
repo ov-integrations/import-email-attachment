@@ -41,7 +41,7 @@ class Module:
             try:
                 self._import_files(import_id, csv_files)
             finally:
-                self.remove_files()
+                self.remove_import_files()
 
         self._module_log.add(LogLevel.INFO, 'Module has been completed')
 
@@ -53,7 +53,7 @@ class Module:
             file_name = message_part.get_filename()
             if self._is_attachment_message_part(message_part) and \
                self._is_file_type_supported(file_name):
-                path_to_file = self._save_file(file_name, message_part)
+                path_to_file = self._write_to_file(file_name, message_part)
                 self._module_log.add(LogLevel.DEBUG,
                                      f'Received file [{file_name}] from a message sent on [{send_date}] from [{send_from}]')
                 attachments.append(path_to_file)
@@ -66,7 +66,7 @@ class Module:
     def _is_file_type_supported(self, file_name: str) -> bool:
         return bool(re.search(Module.ZIP_REGEXP, file_name) or re.search(Module.CSV_REGEXP, file_name))
 
-    def _save_file(self, file_name: str, message_part) -> str:
+    def _write_to_file(self, file_name: str, message_part) -> str:
         path_to_file = os.path.join(Module.FILES_TO_IMPORT_FOLDER, file_name)
         if not os.path.isfile(path_to_file):
             with open(path_to_file, 'wb') as file:
@@ -103,14 +103,14 @@ class Module:
 
     def _import_files(self, import_id: int, files: list) -> None:
         for file_name in files:
-            process_id = self._import.start_import(import_id, self._import_action, file_name)
+            process_id = self._import.run_import(import_id, self._import_action, file_name)
             self._module_log.add(LogLevel.DEBUG, f'Started import for [{file_name}]. Process ID [{process_id}]')
 
-    def create_folder_to_save_files(self):
+    def create_import_files_folder(self):
         if not os.path.exists(Module.FILES_TO_IMPORT_FOLDER):
             os.makedirs(Module.FILES_TO_IMPORT_FOLDER)
 
-    def remove_files(self) -> None:
+    def remove_import_files(self) -> None:
         for file_name in os.listdir(Module.FILES_TO_IMPORT_FOLDER):
             try:
                 os.remove(f'{Module.FILES_TO_IMPORT_FOLDER}/{file_name}')
@@ -147,12 +147,12 @@ class Import:
                    'Authorization': f'Bearer {self._ov_access_key}:{self._ov_secret_key}'}
         response = requests.get(url=url, headers=headers)
 
-        if response.ok is False:
+        if not response.ok:
             raise ModuleError('Failed to get imports',  response.text)
 
         return response.json()
 
-    def start_import(self, import_id: int, import_action: str, file_name: str) -> str:
+    def run_import(self, import_id: int, import_action: str, file_name: str) -> str:
         ov_import = OVImport(self._ov_url_without_protocol, self._ov_access_key, self._ov_secret_key,
                              import_id, file_name, import_action, self._run_comment, isTokenAuth=True)
         if len(ov_import.errors) != 0:
@@ -176,7 +176,7 @@ class MailService:
 
     def get_unread_messages(self) -> list:
         with self._connect() as imap_client:
-            unread_messages = self._filter_unread_messages_by_subject(imap_client)
+            unread_messages = self._get_unread_messages_by_subject(imap_client)
 
         return unread_messages
 
@@ -188,23 +188,22 @@ class MailService:
         except Exception as exception:
             raise ModuleError('Failed to connect', exception) from exception
 
-    def _filter_unread_messages_by_subject(self, imap_client: IMAP4_SSL) -> list:
+    def _get_unread_messages_by_subject(self, imap_client: IMAP4_SSL, subject: str = SUBJECT_PART) -> list:
         filtered_unread_messages = []
-        unread_message_numbers = self._get_unread_messages(imap_client)
-        unread_messages = unread_message_numbers[0].split()
-        for unread_message in unread_messages:
-            message = self._get_filtered_message(imap_client, unread_message)
-            if re.search(self._subject, message.get(MailService.SUBJECT_PART)):
+        unread_message_numbers = self._get_unread_message_numbers(imap_client)[0].split()
+        for unread_message_number in unread_message_numbers:
+            message = self._get_filtered_message(imap_client, unread_message_number)
+            if re.search(self._subject, message.get(subject)):
                 filtered_unread_messages.append(message)
         
         return filtered_unread_messages
 
-    def _get_filtered_message(self, imap_client: IMAP4_SSL, unread_message) -> str:
-        message_part_with_data, message_part_without_data = self._get_message(imap_client, unread_message)
+    def _get_filtered_message(self, imap_client: IMAP4_SSL, message_number) -> str:
+        message_part_with_data, message_part_without_data = self._get_message_parts(imap_client, message_number)
         message_part_format, message_part_data = message_part_with_data
         return email.message_from_bytes(message_part_data)
 
-    def _get_unread_messages(self, imap_client: IMAP4_SSL, mailbox: str = INBOX_FOLDER) -> list:
+    def _get_unread_message_numbers(self, imap_client: IMAP4_SSL, mailbox: str = INBOX_FOLDER) -> list:
         try:
             imap_client.select(mailbox)
             message_status, unread_message_numbers = imap_client.search(None, MailService.UNREAD_MSG)
@@ -212,9 +211,9 @@ class MailService:
         except Exception as exception:
             raise ModuleError('Failed to get unread messages', exception) from exception
 
-    def _get_message(self, imap_client: IMAP4_SSL, mail_data: str) -> list:
+    def _get_message_parts(self, imap_client: IMAP4_SSL, message_number: str) -> list:
         try:
-            message_status, message = imap_client.fetch(mail_data, MailService.MESSAGE_FORMAT)
+            message_status, message = imap_client.fetch(message_number, MailService.MESSAGE_FORMAT)
             return message
         except Exception as exception:
             raise ModuleError('Failed to get message', exception) from exception
