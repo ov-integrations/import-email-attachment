@@ -1,7 +1,8 @@
 import re
 import os
-import email
 import requests
+from email import message_from_bytes
+from email.message import Message
 from imaplib import IMAP4_SSL
 from zipfile import ZipFile
 from onevizion import LogLevel, IntegrationLog, OVImport
@@ -45,7 +46,7 @@ class Module:
 
         self._module_log.add(LogLevel.INFO, 'Module has been completed')
 
-    def _get_attachments_from_message(self, message) -> list:
+    def _get_attachments_from_message(self, message: Message) -> list:
         attachments = []
         send_from = message.get('From')
         send_date = message.get('Date')
@@ -60,13 +61,13 @@ class Module:
 
         return attachments
 
-    def _is_attachment_message_part(self, message_part) -> bool:
+    def _is_attachment_message_part(self, message_part: Message) -> bool:
         return bool(message_part.get_content_disposition() == 'attachment')
 
     def _is_file_type_supported(self, file_name: str) -> bool:
         return bool(re.search(Module.ZIP_REGEXP, file_name) or re.search(Module.CSV_REGEXP, file_name))
 
-    def _write_to_file(self, file_name: str, message_part) -> str:
+    def _write_to_file(self, file_name: str, message_part: Message) -> str:
         path_to_file = os.path.join(Module.FILES_TO_IMPORT_FOLDER, file_name)
         if not os.path.isfile(path_to_file):
             with open(path_to_file, 'wb') as file:
@@ -122,15 +123,14 @@ class Module:
 
 
 class Import:
-    RUN_COMMENT = 'Imported started by module [module_name]. Module Run Process ID: [process_id]'
+    RUN_COMMENT = 'Imported started by module [{module_name}]. Module Run Process ID: [{process_id}]'
 
     def __init__(self, ov_url: str, ov_access_key: str, ov_secret_key: str, process_id: str, module_name: str) -> None:
         self._ov_url = ov_url
         self._ov_url_without_protocol = re.sub('^http://|^https://', '', ov_url[:-1])
         self._ov_access_key = ov_access_key
         self._ov_secret_key = ov_secret_key
-        self._run_comment = Import.RUN_COMMENT.replace('module_name', module_name) \
-                                              .replace('process_id', process_id)
+        self._run_comment = Import.RUN_COMMENT.format(module_name=module_name, process_id=process_id)
 
     def get_import_id(self, import_name: str) -> int:
         import_id = None
@@ -174,7 +174,7 @@ class MailService:
         self._password = mail_data['password']
         self._subject = mail_data['subject']
 
-    def get_unread_messages(self) -> list:
+    def get_unread_messages(self) -> list[Message]:
         with self._connect() as imap_client:
             unread_messages = self._get_unread_messages_by_subject(imap_client)
 
@@ -188,7 +188,7 @@ class MailService:
         except Exception as exception:
             raise ModuleError('Failed to connect', exception) from exception
 
-    def _get_unread_messages_by_subject(self, imap_client: IMAP4_SSL, subject: str = SUBJECT_PART) -> list:
+    def _get_unread_messages_by_subject(self, imap_client: IMAP4_SSL, subject: str = SUBJECT_PART) -> list[Message]:
         filtered_unread_messages = []
         unread_message_numbers = self._get_unread_message_numbers(imap_client)[0].split()
         for unread_message_number in unread_message_numbers:
@@ -198,10 +198,10 @@ class MailService:
         
         return filtered_unread_messages
 
-    def _get_filtered_message(self, imap_client: IMAP4_SSL, message_number) -> str:
+    def _get_filtered_message(self, imap_client: IMAP4_SSL, message_number: str) -> Message:
         message_part_with_data, message_part_without_data = self._get_message_parts(imap_client, message_number)
         message_part_format, message_part_data = message_part_with_data
-        return email.message_from_bytes(message_part_data)
+        return message_from_bytes(message_part_data)
 
     def _get_unread_message_numbers(self, imap_client: IMAP4_SSL, mailbox: str = INBOX_FOLDER) -> list:
         try:
