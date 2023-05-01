@@ -1,10 +1,16 @@
 {
-"url_OneVizion" : "url",
-"login_OneVizion" : "login",
-"pass_OneVizion" : "password",
-"import_name" : "import name",
-
-"login_mail":"login",
-"pass_mail":"password",
-"subject_mail":"subject"
+    "onevizion": {
+        "ovUrl": "https://***.onevizion.com/",
+        "ovAccessKey": "******",
+        "ovSecretKey": "************",
+        "ovImportName": "import name",
+        "ovImportAction": "INSERT_UPDATE"
+    },
+    "email": {
+        "host": "imap.gmail.com",
+        "port": 993,
+        "username": "******",
+        "password": "************",
+        "subject": "subject"
+    }
 }

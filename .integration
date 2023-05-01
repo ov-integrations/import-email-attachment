@@ -1,4 +1,5 @@
-command = python StartIntegration.py
+command = python3 start_module.py
 settings_file_name = settings.json
 default_schedule = 0 0 3 * * ?
 read_from_stdout = false
+1.0 = [22.6.0)

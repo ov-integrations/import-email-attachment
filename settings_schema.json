@@ -1,0 +1,51 @@
+{
+    "type": "object",
+    "properties": {
+        "onevizion": {
+            "type": "object",
+            "properties": {
+                "ovUrl": {
+                    "type": "string",
+                    "pattern": "^https://.*|^http://.*"
+                },
+                "ovAccessKey": {
+                    "type": "string"
+                },
+                "ovSecretKey": {
+                    "type": "string"
+                },
+                "ovImportName": {
+                    "type": "string"
+                },
+                "ovImportAction": {
+                    "type": "string",
+                    "enum": ["INSERT", "UPDATE", "INSERT_UPDATE"]
+                }
+            },
+            "required": ["ovUrl", "ovAccessKey", "ovSecretKey", "ovImportName", "ovImportAction"]
+        },
+        "email": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "username": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "subject": {
+                    "type": "string"
+                }
+            },
+            "required": ["host", "port", "username", "password", "subject"]
+        }
+    },
+    "required": ["onevizion", "email"]
+}
