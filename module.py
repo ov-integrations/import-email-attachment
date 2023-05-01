@@ -13,11 +13,12 @@ class Module:
     CSV_REGEXP = '(?i)^.*\\.csv$'
     ZIP_REGEXP = '(?i)^.*\\.zip$'
 
-    def __init__(self, process_id: int, module_name: str, ov_module_log: IntegrationLog, settings_data: dict) -> None:
+    def __init__(self, module_process_id: int, module_name: str, ov_module_log: IntegrationLog, settings_data: dict) -> None:
         _ov_settings = settings_data['onevizion']
         self._module_log = ov_module_log
-        self._import = Import(_ov_settings['ovUrl'], _ov_settings['ovAccessKey'], _ov_settings['ovSecretKey'],
-                              str(process_id), module_name)
+        self._import = Import(_ov_settings['ovUrl'], _ov_settings['ovAccessKey'], _ov_settings['ovSecretKey'])
+        self._module_process_id = str(module_process_id)
+        self._module_name = module_name
         self._mail_service = MailService(settings_data['email'])
         self._import_name = _ov_settings['ovImportName']
         self._import_action = _ov_settings['ovImportAction']
@@ -104,7 +105,7 @@ class Module:
 
     def _import_files(self, import_id: int, files: list) -> None:
         for file_name in files:
-            process_id = self._import.run_import(import_id, self._import_action, file_name)
+            process_id = self._import.run_import(import_id, self._import_action, file_name, self._module_process_id, self._module_name)
             self._module_log.add(LogLevel.DEBUG, f'Started import for [{file_name}]. Process ID [{process_id}]')
 
     def create_import_files_folder(self):
@@ -123,14 +124,13 @@ class Module:
 
 
 class Import:
-    RUN_COMMENT = 'Imported started by module [{module_name}]. Module Run Process ID: [{process_id}]'
+    RUN_COMMENT = 'Import started by module [{module_name}]. Module Run Process ID: [{module_process_id}]'
 
-    def __init__(self, ov_url: str, ov_access_key: str, ov_secret_key: str, process_id: str, module_name: str) -> None:
+    def __init__(self, ov_url: str, ov_access_key: str, ov_secret_key: str) -> None:
         self._ov_url = ov_url
         self._ov_url_without_protocol = re.sub('^http://|^https://', '', ov_url[:-1])
         self._ov_access_key = ov_access_key
         self._ov_secret_key = ov_secret_key
-        self._run_comment = Import.RUN_COMMENT.format(module_name=module_name, process_id=process_id)
 
     def get_import_id(self, import_name: str) -> int:
         import_id = None
@@ -152,9 +152,10 @@ class Import:
 
         return response.json()
 
-    def run_import(self, import_id: int, import_action: str, file_name: str) -> str:
+    def run_import(self, import_id: int, import_action: str, file_name: str, module_process_id: str, module_name: str) -> str:
+        comment = Import.RUN_COMMENT.format(module_name=module_name, module_process_id=module_process_id)
         ov_import = OVImport(self._ov_url_without_protocol, self._ov_access_key, self._ov_secret_key,
-                             import_id, file_name, import_action, self._run_comment, isTokenAuth=True)
+                             import_id, file_name, import_action, comment, isTokenAuth=True)
         if len(ov_import.errors) != 0:
             raise ModuleError('Failed to start import', ov_import.request.text)
 
