@@ -6,7 +6,7 @@
             "properties": {
                 "ovUrl": {
                     "type": "string",
-                    "pattern": "^https://.*/$|^http://.*/$"
+                    "pattern": "^(https|http)://.*[^/]$"
                 },
                 "ovAccessKey": {
                     "type": "string"

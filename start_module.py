@@ -26,7 +26,7 @@ except Exception as exception:
     raise Exception(f'Incorrect value in the settings file\n{str(exception)}') from exception
 
 onevizion_data = settings_data['onevizion']
-ov_url = re.sub('^http://|^https://', '', onevizion_data['ovUrl'][:-1])
+ov_url = re.sub('^(https|http)://', '', onevizion_data['ovUrl'])
 ov_access_key = onevizion_data['ovAccessKey']
 ov_secret_key = onevizion_data['ovSecretKey']
 
