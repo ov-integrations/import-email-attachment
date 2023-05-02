@@ -128,7 +128,7 @@ class Import:
 
     def __init__(self, ov_url: str, ov_access_key: str, ov_secret_key: str) -> None:
         self._ov_url = ov_url
-        self._ov_url_without_protocol = re.sub('^http://|^https://', '', ov_url[:-1])
+        self._ov_url_without_protocol = re.sub('^(https|http)://', '', ov_url)
         self._ov_access_key = ov_access_key
         self._ov_secret_key = ov_secret_key
 
