@@ -175,7 +175,7 @@ class MailService:
         self._password = mail_data['password']
         self._subject = mail_data['subject']
 
-    def get_unread_messages(self) -> list[Message]:
+    def get_unread_messages(self) -> list:
         with self._connect() as imap_client:
             unread_messages = self._get_unread_messages_by_subject(imap_client)
 
@@ -189,7 +189,7 @@ class MailService:
         except Exception as exception:
             raise ModuleError('Failed to connect', exception) from exception
 
-    def _get_unread_messages_by_subject(self, imap_client: IMAP4_SSL, subject: str = SUBJECT_PART) -> list[Message]:
+    def _get_unread_messages_by_subject(self, imap_client: IMAP4_SSL, subject: str = SUBJECT_PART) -> list:
         filtered_unread_messages = []
         unread_message_numbers = self._get_unread_message_numbers(imap_client)[0].split()
         for unread_message_number in unread_message_numbers:
