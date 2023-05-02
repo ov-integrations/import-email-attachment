@@ -142,7 +142,7 @@ class Import:
         return import_id
 
     def _get_imports(self) -> list:
-        url = f'{self._ov_url}/api/v3/imports'
+        url = f'{self._ov_url}api/v3/imports'
         headers = {'Content-type': 'application/json', 'Content-Encoding': 'utf-8',
                    'Authorization': f'Bearer {self._ov_access_key}:{self._ov_secret_key}'}
         response = requests.get(url=url, headers=headers)
